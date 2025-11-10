@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data files
+data/bot.db
+data/bot.db-journal
+data/bot.db.backup
+bot.log
+
+# Documentation
+*.md
+!README.md
+
+# Tests
+test_*.py
+*_test.py
+
+# Others
+.env.example
+TODO.md
+CHEATSHEET.md
+QUICKSTART.md
+PROJECT_STRUCTURE.md
+FINAL_SUMMARY.md
+START_HERE.txt
