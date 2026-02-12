@@ -19,7 +19,7 @@ git clone <repository-url>
 cd she_codes_bot
 ```
 
-### 2. Создайте виртуальное окружение
+### 2. Создайте виртуальное окружение\
 
 ```bash
 python -m venv venv
