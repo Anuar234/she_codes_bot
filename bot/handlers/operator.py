@@ -194,8 +194,9 @@ async def callback_approve(callback: CallbackQuery):
         reference_id=answer_id,
     )
 
+    current_caption = callback.message.caption or ""
     await callback.message.edit_caption(
-        caption=callback.message.caption + f"\n\n✅ ОДОБРЕНО ({points} баллов)",
+        caption=current_caption + f"\n\n✅ ОДОБРЕНО ({points} баллов)",
         reply_markup=None,
     )
 
@@ -232,8 +233,9 @@ async def callback_reject(callback: CallbackQuery):
         reviewed_by=callback.from_user.id,
     )
 
+    current_caption = callback.message.caption or ""
     await callback.message.edit_caption(
-        caption=callback.message.caption + "\n\n❌ ОТКЛОНЕНО",
+        caption=current_caption + "\n\n❌ ОТКЛОНЕНО",
         reply_markup=None,
     )
 
