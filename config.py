@@ -31,6 +31,9 @@ class Config:
         for time in os.getenv("TASK_SCHEDULE_TIMES", "10:00,18:00").split(",")
     ]
 
+    # Forum Topic Configuration (Flood)
+    FLOOD_THREAD_ID: int = int(os.getenv("FLOOD_THREAD_ID", "0"))
+
     # Points Configuration
     MAX_DAILY_ACTIVITY_POINTS: int = int(os.getenv("MAX_DAILY_ACTIVITY_POINTS", "200"))
     MIN_MESSAGE_LENGTH: int = int(os.getenv("MIN_MESSAGE_LENGTH", "10"))

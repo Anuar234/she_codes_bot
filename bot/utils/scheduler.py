@@ -95,11 +95,15 @@ async def send_random_task(bot: Bot):
         f"Ответьте на это сообщение, чтобы выполнить задание!"
     )
 
+    send_kwargs = {
+        "chat_id": Config.CHAT_ID,
+        "text": message_text,
+    }
+    if Config.FLOOD_THREAD_ID > 0:
+        send_kwargs["message_thread_id"] = Config.FLOOD_THREAD_ID
+
     try:
-        await bot.send_message(
-            chat_id=Config.CHAT_ID,
-            text=message_text
-        )
+        await bot.send_message(**send_kwargs)
         logger.info(f"Task {task['task_id']} sent successfully (daily_task_id: {daily_task_id})")
     except Exception as e:
         logger.error(f"Failed to send task: {e}")
@@ -135,11 +139,15 @@ async def send_week_results(bot: Bot):
 
         message += "\n🎉 Поздравляем победителей!\n\nСпасибо всем за участие!"
 
+    send_kwargs = {
+        "chat_id": Config.CHAT_ID,
+        "text": message,
+    }
+    if Config.FLOOD_THREAD_ID > 0:
+        send_kwargs["message_thread_id"] = Config.FLOOD_THREAD_ID
+
     try:
-        await bot.send_message(
-            chat_id=Config.CHAT_ID,
-            text=message
-        )
+        await bot.send_message(**send_kwargs)
         logger.info("Week results sent successfully")
     except Exception as e:
         logger.error(f"Failed to send week results: {e}")

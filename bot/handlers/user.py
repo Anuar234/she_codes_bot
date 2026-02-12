@@ -1,10 +1,15 @@
 """User handlers for ChatQuestBot."""
 
 import logging
-from datetime import datetime
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import (
+    Message,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
 from aiogram.enums import ContentType
 
 from database import Database
@@ -16,9 +21,53 @@ router = Router()
 db = Database()
 
 
+def is_private_chat(message: Message) -> bool:
+    """Check if message is from private chat."""
+    return message.chat.type == "private"
+
+
+def create_reply_menu_keyboard(is_operator: bool) -> ReplyKeyboardMarkup:
+    """Create reply keyboard for main menu."""
+    buttons = [
+        [KeyboardButton(text="💰 Мои баллы")],
+        [KeyboardButton(text="🏆 Топ")],
+        [KeyboardButton(text="📖 Помощь")],
+    ]
+
+    if is_operator:
+        buttons.append([KeyboardButton(text="🛡 Модерация")])
+
+    return ReplyKeyboardMarkup(
+        keyboard=buttons,
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+
+
+def is_flood_thread(message: Message) -> bool:
+    """Check if message is in the Flood forum topic."""
+    if message.chat.type not in ("group", "supergroup"):
+        return False
+    if Config.FLOOD_THREAD_ID <= 0:
+        return False
+    return message.message_thread_id == Config.FLOOD_THREAD_ID
+
+
+def is_allowed_group_message(message: Message) -> bool:
+    """Allow only Flood topic messages in groups if configured."""
+    if message.chat.type in ("group", "supergroup"):
+        if Config.FLOOD_THREAD_ID > 0:
+            return is_flood_thread(message)
+        return True
+    return True
+
+
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     """Handle /start command."""
+    if not is_private_chat(message):
+        return
+
     user = message.from_user
 
     # Add user to database
@@ -39,10 +88,18 @@ async def cmd_start(message: Message):
         "/help - помощь"
     )
 
+    await message.answer(
+        "Меню функций:",
+        reply_markup=create_reply_menu_keyboard(user.id in Config.OPERATOR_IDS)
+    )
+
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
     """Handle /help command."""
+    if not is_private_chat(message):
+        return
+
     help_text = (
         "📖 Как работает бот:\n\n"
         "1️⃣ Бот отправляет ежедневные задания\n"
@@ -68,10 +125,48 @@ async def cmd_help(message: Message):
     await message.answer(help_text)
 
 
-@router.message(Command("my_points"))
-async def cmd_my_points(message: Message):
-    """Show user's current points."""
+@router.message(Command("menu"))
+async def cmd_menu(message: Message):
+    """Show main reply menu."""
+    if not is_private_chat(message):
+        return
+    await message.answer(
+        "Меню функций:",
+        reply_markup=create_reply_menu_keyboard(message.from_user.id in Config.OPERATOR_IDS)
+    )
+
+
+@router.message(Command("whoami"))
+async def cmd_whoami(message: Message):
+    """Debug: show current user id and operator status."""
+    if not is_private_chat(message):
+        return
     user_id = message.from_user.id
+    is_op = user_id in Config.OPERATOR_IDS
+    await message.answer(
+        f"Ваш ID: {user_id}\n"
+        f"Оператор: {is_op}\n"
+        f"OPERATOR_IDS: {', '.join(str(x) for x in Config.OPERATOR_IDS)}"
+    )
+
+
+@router.message(Command("thread_id"))
+async def cmd_thread_id(message: Message):
+    """Debug: show current thread id (topic)."""
+    thread_id = message.message_thread_id
+    chat_type = message.chat.type
+    await message.answer(
+        f"Chat type: {chat_type}\n"
+        f"Thread ID: {thread_id}"
+    )
+
+
+async def send_my_points(message: Message, user):
+    """Send user points info (supports callback context)."""
+    if not is_private_chat(message):
+        return
+
+    user_id = user.id
 
     # Check if user is banned
     if db.is_user_banned(user_id):
@@ -80,13 +175,23 @@ async def cmd_my_points(message: Message):
         )
         return
 
+    # Ensure user exists in database
+    if not db.get_user(user_id):
+        db.add_user(
+            user_id=user.id,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            is_operator=user.id in Config.OPERATOR_IDS
+        )
+
     # Get user points
     points = db.get_user_points(user_id)
-    user = db.get_user(user_id)
+    db_user = db.get_user(user_id)
 
     text = (
         f"💰 Твои баллы: {points}\n"
-        f"⚠️ Предупреждения: {user['warnings_count']}/{Config.MAX_WARNINGS}\n\n"
+        f"⚠️ Предупреждения: {db_user['warnings_count']}/{Config.MAX_WARNINGS}\n\n"
     )
 
     # Get daily activity points
@@ -105,16 +210,31 @@ async def cmd_my_points(message: Message):
     await message.answer(text)
 
 
+@router.message(Command("my_points"))
+async def cmd_my_points(message: Message):
+    """Show user's current points."""
+    if not is_private_chat(message):
+        return
+    await send_my_points(message, message.from_user)
+
+
 @router.message(Command("top"))
 async def cmd_top(message: Message):
     """Show top users leaderboard."""
-    leaderboard = db.get_leaderboard(limit=10)
+    if not is_allowed_group_message(message):
+        return
+    is_flood = is_flood_thread(message)
+    leaderboard = db.get_leaderboard(limit=3 if is_flood else 10)
 
     if not leaderboard:
         await message.answer("🏆 Пока нет участников с баллами!")
         return
 
-    text = "🏆 Топ-10 участников недели:\n\n"
+    text = (
+        "🏆 Подиум недели (Топ-3):\n\n"
+        if is_flood
+        else "🏆 Топ-10 участников недели:\n\n"
+    )
 
     medals = ["🥇", "🥈", "🥉"]
 
@@ -128,10 +248,53 @@ async def cmd_top(message: Message):
     await message.answer(text)
 
 
+@router.message(F.text == "💰 Мои баллы")
+async def menu_my_points(message: Message):
+    if not is_private_chat(message):
+        return
+    await send_my_points(message, message.from_user)
+
+
+@router.message(F.text == "🏆 Топ")
+async def menu_top(message: Message):
+    if not is_private_chat(message):
+        return
+    await cmd_top(message)
+
+
+@router.message(F.text == "📖 Помощь")
+async def menu_help(message: Message):
+    if not is_private_chat(message):
+        return
+    await cmd_help(message)
+
+
+@router.message(F.text == "🛡 Модерация")
+async def menu_moderation(message: Message):
+    if not is_private_chat(message):
+        return
+    if message.from_user.id not in Config.OPERATOR_IDS:
+        await message.answer("❌ Эта команда доступна только операторам")
+        return
+    from bot.handlers.operator import create_moderation_keyboard
+    await message.answer(
+        "Модерация:",
+        reply_markup=create_moderation_keyboard()
+    )
+
+
 @router.message(F.content_type.in_([ContentType.TEXT, ContentType.PHOTO, ContentType.VIDEO]))
 async def handle_chat_activity(message: Message):
     """Handle chat messages for activity tracking and task answers."""
     user_id = message.from_user.id
+
+    # In groups/supergroups process only configured Flood topic.
+    if message.chat.type in ("group", "supergroup") and not is_allowed_group_message(message):
+        return
+
+    # In private chat keep command-based flow; ignore free text/media.
+    if is_private_chat(message):
+        return
 
     # Skip if user is banned
     if db.is_user_banned(user_id):
@@ -158,9 +321,7 @@ async def handle_chat_activity(message: Message):
             is_task_answer = True
             await handle_task_answer(message, current_task)
 
-    # Track chat activity (only for text messages not answering tasks)
-    if not is_task_answer and message.content_type == ContentType.TEXT:
-        await track_activity(message)
+    # In Flood topic only task answers are processed.
 
 
 async def handle_task_answer(message: Message, task: dict):
@@ -210,7 +371,7 @@ async def forward_to_operators(message: Message, answer_id: int, task: dict):
     username = user.username or user.first_name
 
     caption = (
-        f"📝 Новый ответ на задание:\n"
+        f"📌 Новый ответ на задание:\n"
         f"👤 От: @{username}\n"
         f"🎯 Задание: {task['text']}\n"
         f"💰 Баллы: {task['points']}\n"
